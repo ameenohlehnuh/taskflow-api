@@ -22,7 +22,9 @@
     "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js",
     "migration:generate": "npm run typeorm migration:generate -- -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm migration:revert -- -d src/database/data-source.ts",
-    "migration:revert:prod": "typeorm migration:revert -d dist/database/data-source.js"
+    "migration:revert:prod": "typeorm migration:revert -d dist/database/data-source.js",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/seed.ts",
+    "seed:prod": "node dist/database/seeds/seed.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
