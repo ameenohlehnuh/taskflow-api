@@ -2,19 +2,19 @@ version: '3.9'
 
 services:
   postgres-primary:
-    image: postgres:15
+    image: postgis/postgis:16-3.4-alpine
     container_name: postgres-primary
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: students
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-spoton}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_primary_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,16 +23,16 @@ services:
     build: .
     container_name: nest-backend-1
     ports:
-      - "7070:7070"
+      - "${PORT:-7070}:7070"
     env_file:
       - .env
     environment:
       INSTANCE_ID: backend-1
       DB_HOST: postgres-primary
-      DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: spoton
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-spoton}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RUN_MIGRATIONS: "true"
