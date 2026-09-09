@@ -6,15 +6,15 @@ services:
     container_name: postgres-primary
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-spoton}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: spoton
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - postgres_primary_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,16 +23,16 @@ services:
     build: ./spot-on_service
     container_name: nest-backend-1
     ports:
-      - "${PORT:-7070}:7070"
+      - "7070:7070"
     env_file:
       - ./spot-on_service/.env
     environment:
       INSTANCE_ID: backend-1
       DB_HOST: postgres-primary
-      DB_PORT: ${DB_PORT:-5432}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      DB_NAME: ${DB_NAME:-spoton}
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: spoton
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RUN_MIGRATIONS: "true"
@@ -42,12 +42,24 @@ services:
       redis:
         condition: service_started
 
-  redis:  
+  redis:
     image: redis:7
     container_name: redis
     restart: always
     ports:
       - "6379:6379"
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@spoton.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres-primary
 
 volumes:
   postgres_primary_data:
