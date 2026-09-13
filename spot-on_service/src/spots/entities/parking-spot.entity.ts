@@ -74,10 +74,10 @@ export class ParkingSpot {
   @Column({ type: 'jsonb', default: [] })
   images?: string[];
 
-  @Column({ type: 'jsonb', default: [] })
+  @Column({ type: 'text', array: true, default: '{}' })
   amenities?: string[];
 
-  @Column({ type: 'jsonb', default: [], name: 'vehicle_types' })
+  @Column({ type: 'text', array: true, name: 'vehicle_types', default: '{}' })
   vehicleTypes?: string[];
 
   @Column({

@@ -10,6 +10,7 @@ import { BookingsModule } from './bookings/bookings.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { NotificationsModule } from './notifications/notifications.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    RedisModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
