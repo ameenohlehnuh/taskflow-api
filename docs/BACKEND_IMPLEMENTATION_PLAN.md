@@ -3,6 +3,12 @@
 Companion to `IMPLEMENTATION_PLAN.md` (Flutter frontend). This plan covers the backend that the
 mock `MockRepository` will eventually be replaced with.
 
+> **Contract note:** The Booking & Payment flow is specified in
+> [`booking_module_api_contract.md`](booking_module_api_contract.md), which supersedes
+> the older Stage-2 route sketches below wherever they differ. The frontend integration
+> view of the same contract lives in
+> [`booking_frontend_integration_guide.md`](booking_frontend_integration_guide.md).
+
 ## 0. Stack
 
 - **NestJS** (TypeScript)
@@ -64,17 +70,49 @@ Split into sub-stages because auth must land before anything else can be guarded
 - `GET /spots/:id`
 
 ### 2.4 Bookings module
-- `POST /bookings` — **business logic**: reject if overlapping `[startTime, endTime]` exists for the
-  same `spotId` with status in `(confirmed, ongoing)`
-- `GET /bookings/mine` (renter), `GET /bookings/host` (host)
-- `PATCH /bookings/:id/cancel`
-- Write a focused unit test for the overlap-check logic here rather than waiting for stage 4 —
-  it's the one piece of business logic that will silently break the product if it regresses
+> **Superseded by `booking_module_api_contract.md`** — that document is the source of
+> truth for routes, payloads, and the error envelope. Summary below.
 
-### 2.5 Payments module
-- `POST /payments/:bookingId/slip` (renter uploads slip → `verificationStatus: pending_review`)
-- `PATCH /payments/:id/verify` (host approves/rejects → `verified`/`rejected`, cascades booking
-  status to `confirmed` or back to `pending_payment`)
+- `GET /spots/:spotId/availability` — public; returns availability + server-computed
+  price quote with `expiresAt` (short-lived, advisory)
+- `POST /bookings` — JWT; requires `Idempotency-Key` header (UUID v4). Server-side
+  pricing (`unitRate`, `subtotal`, `serviceFee`, `totalPrice`), `quoteId` re-validation,
+  and a **transactional overlap check** against bookings with status in
+  `(CONFIRMED, ONGOING, PENDING_PAYMENT, PAYMENT_SUBMITTED)` before insert
+- `GET /bookings` (renter, filters + pagination), `GET /bookings/:id` (renter or owning
+  host only), `GET /hosts/me/bookings` (host)
+- `POST /bookings/:id/cancel` — server-side cancellation policy snapshot; refund
+  eligibility computed server-side
+- `POST /bookings/:id/refund-requests` — creates a `PENDING` refund request
+- **State machine** (uppercase enums): `PENDING_PAYMENT → PAYMENT_SUBMITTED →
+  CONFIRMED → ONGOING → COMPLETED`, with `CANCELLED_BY_USER`, `CANCELLED_BY_HOST`,
+  `REJECTED_BY_HOST`, `EXPIRED`, `REFUNDED` branches. Illegal transitions → `409
+  INVALID_STATUS_TRANSITION`; every transition writes an immutable
+  `booking_status_history` row (actor id, actor type, old/new status, reason)
+- Write a focused unit test for the overlap-check logic here rather than waiting for
+  stage 4 — it's the one piece of business logic that will silently break the product
+  if it regresses
+
+### 2.5 Payments module (S3 presigned slip flow)
+> Supersedes the old `POST /payments/:bookingId/slip` / `PATCH /payments/:id/verify`
+> design. Slips are uploaded **directly to S3/MinIO** with presigned URLs; the API
+> never streams image bytes.
+
+- `POST /bookings/:id/payment-slip/upload-url` — renter requests a presigned PUT URL
+  (5-min expiry, ≤10 MB, `image/jpeg|png|application/pdf`); backend stores an object
+  key, never a client URL
+- `POST /bookings/:id/payment` — renter submits `amount` (must equal booking total →
+  `422 PAYMENT_AMOUNT_MISMATCH`), `currency`, `slipObjectKey`; creates the payment
+  (`PENDING_REVIEW`) and transitions the booking to `PAYMENT_SUBMITTED`; rejects
+  duplicate submissions unless resubmission is allowed
+- `GET /hosts/me/bookings/:id/payment-slip` — host-only; authorizes against spot
+  ownership and returns a short-lived presigned GET URL
+- `POST /hosts/me/bookings/:id/confirm` — atomic: payment → `VERIFIED`, booking →
+  `CONFIRMED`, status history row
+- `POST /hosts/me/bookings/:id/reject` — payment → `REJECTED` with `reasonCode` +
+  `allowResubmission` flag; booking → `REJECTED_BY_HOST`
+- Local dev uses MinIO (`quay.io/minio/*`, bucket `payment-slips`) via the `S3Module`
+  provider; `AWS_S3_FORCE_PATH_STYLE=true`
 
 ### 2.6 Reviews module
 - `POST /reviews` (only allowed if the referenced booking is `completed`)
@@ -153,18 +191,20 @@ src/
       nearby-query.dto.ts
   bookings/
     entities/booking.entity.ts
+    entities/booking-status-history.entity.ts
+    entities/refund-request.entity.ts
     bookings.module.ts
-    bookings.service.ts        # overlap-check logic lives here
+    bookings.service.ts        # overlap-check + idempotency + state machine
     bookings.controller.ts
-    dto/create-booking.dto.ts
+    dto/booking.dto.ts         # availability, create, payment, cancel, refund, reject
   payments/
     entities/payment.entity.ts
     payments.module.ts
-    payments.service.ts
+    payments.service.ts        # presigned URLs, amount validation, host confirm/reject
     payments.controller.ts
-    dto/
-      upload-slip.dto.ts
-      verify-payment.dto.ts
+  common/
+    filters/global-exception.filter.ts   # contract §9 error envelope
+    s3/s3.module.ts                      # S3Client provider (MinIO/AWS)
   reviews/
     entities/review.entity.ts
     reviews.module.ts
@@ -233,10 +273,21 @@ src/
 | rentalType | enum('hourly','daily','monthly') | |
 | startTime | timestamptz | |
 | endTime | timestamptz | |
-| totalPrice | numeric(10,2) | |
-| status | enum('pending_payment','confirmed','ongoing','completed','cancelled') | |
+| currency | varchar(3) | default 'THB' |
+| unitRate | numeric(10,2) | nullable, server-computed |
+| subtotal | numeric(10,2) | nullable, server-computed |
+| serviceFee | numeric(10,2) | default 0 |
+| totalPrice | numeric(10,2) | server-computed |
+| status | enum — UPPERCASE: `PENDING_PAYMENT`, `PAYMENT_SUBMITTED`, `CONFIRMED`, `ONGOING`, `COMPLETED`, `CANCELLED_BY_USER`, `CANCELLED_BY_HOST`, `REJECTED_BY_HOST`, `EXPIRED`, `REFUNDED` | see contract §8 state machine |
+| vehicleDetails | jsonb | `{ type, plateNumber, color? }` |
+| notes | text | nullable |
+| idempotencyKey | uuid | unique index; from `Idempotency-Key` header |
 | paymentId | uuid, FK → payments.id | nullable |
 | createdAt / updatedAt | timestamptz | |
+
+Additional tables (migration `1700000000008`):
+- `booking_status_history` — `id`, `bookingId` (FK, cascade), `status`, `previousStatus`, `actorId`, `actorType` (`RENTER|HOST|SYSTEM`), `reason`, `createdAt`
+- `refund_requests` — `id`, `bookingId` (FK, cascade), `requestedAmount`, `currency`, `reason`, `status` (`PENDING|APPROVED|REJECTED|PROCESSED`), `createdAt`, `updatedAt`
 
 ### `payments`
 | Field | Type | Notes |
@@ -245,11 +296,17 @@ src/
 | bookingId | uuid, FK → bookings.id | unique |
 | method | enum('promptpay') | |
 | amount | numeric(10,2) | |
-| slipImageUrl | varchar(500) | nullable |
+| slipImageUrl | varchar(500) | nullable — **legacy column**, superseded by `slipObjectKey` |
+| slipObjectKey | varchar(500) | nullable — S3/MinIO object key (contract-canonical reference) |
 | verificationStatus | enum('awaiting_slip','pending_review','verified','rejected') | |
+| rejectionReason | text | nullable — set on host reject |
+| allowResubmission | boolean | default false — set on host reject |
 | verifiedAt | timestamptz | nullable |
 | verifiedBy | uuid, FK → users.id | nullable, the host who verified |
 | createdAt / updatedAt | timestamptz | |
+
+> **Pending migration:** `slipObjectKey`, `rejectionReason`, and `allowResubmission`
+> are contract-required but not yet in the schema — add them in the Phase 2 migration.
 
 ### `reviews`
 | Field | Type | Notes |
@@ -298,19 +355,46 @@ class NearbyQueryDto {
   amenities?: string[];
 }
 
-// bookings/dto/create-booking.dto.ts
-class CreateBookingDto {
-  spotId: string;
+// bookings/dto/booking.dto.ts (Phase 1 delivered)
+class AvailabilityQueryDto {
+  startTime: string; // ISO 8601
+  endTime: string;   // ISO 8601
   rentalType: 'hourly' | 'daily' | 'monthly';
-  startTime: string; // ISO
-  endTime: string;   // ISO
+  vehicleType?: string;
 }
 
-// payments/dto/verify-payment.dto.ts
-class VerifyPaymentDto {
-  decision: 'verified' | 'rejected';
-  reason?: string; // required if rejected
+class CreateBookingDto {
+  spotId: string;          // uuid
+  startTime: string;       // ISO
+  endTime: string;         // ISO
+  rentalType: 'hourly' | 'daily' | 'monthly';
+  vehicleDetails?: { type: string; plateNumber: string; color?: string };
+  notes?: string;
+  quoteId?: string;        // binds to a recent server quote
 }
+
+class PaymentSubmissionDto {
+  method: 'PROMPTPAY';
+  amount: string;          // decimal string, must equal booking total
+  currency: 'THB';
+  slipObjectKey: string;   // from the presigned upload flow
+  clientReference?: string;
+}
+
+class UploadUrlDto {
+  fileName: string;
+  contentType: 'image/jpeg' | 'image/png' | 'application/pdf';
+  sizeBytes: number;       // ≤ 10 MB
+}
+
+class HostRejectDto {
+  reasonCode: 'AMOUNT_MISMATCH' | 'SLIP_UNREADABLE' | 'SPOT_UNAVAILABLE' | 'OTHER';
+  reason: string;
+  allowResubmission?: boolean;
+}
+
+// payments/dto/verify-payment.dto.ts — REMOVED, superseded by HostRejectDto +
+// the confirm endpoint (no body beyond an optional note)
 
 // reviews/dto/create-review.dto.ts
 class CreateReviewDto {

@@ -11,6 +11,9 @@ import { PaymentsModule } from './payments/payments.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { RedisModule } from './redis/redis.module';
+import { S3Module } from './common/s3/s3.module';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { APP_FILTER } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -19,6 +22,7 @@ import { RedisModule } from './redis/redis.module';
       envFilePath: '.env',
     }),
     RedisModule,
+    S3Module,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -43,6 +47,9 @@ import { RedisModule } from './redis/redis.module';
     NotificationsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+  ],
 })
 export class AppModule {}
