@@ -23,11 +23,12 @@ services:
     build: ./spot-on_service
     container_name: nest-backend-1
     ports:
-      - "7070:7070"
+      - "3000:7070"
     env_file:
       - ./spot-on_service/.env
     environment:
       INSTANCE_ID: backend-1
+      PORT: "7070"
       DB_HOST: postgres-primary
       DB_PORT: 5432
       DB_USER: postgres

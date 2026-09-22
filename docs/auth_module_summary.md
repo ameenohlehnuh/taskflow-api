@@ -1,7 +1,7 @@
 # Backend Auth Module Documentation & Handoff Specification
 
 > **Audience:** Frontend AI Agent (Flutter client integration)
-> **Base URL:** `http://<host>:7070/api/v1/auth`
+> **Base URL:** `http://<host>:3000/api/v1/auth`
 > **Status:** Implemented and verified end-to-end against the Docker stack.
 
 ---
