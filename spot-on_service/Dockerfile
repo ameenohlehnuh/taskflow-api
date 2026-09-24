@@ -21,6 +21,6 @@ COPY --from=builder /app/tsconfig.json ./
 
 RUN npm ci
 
-EXPOSE 6060
+EXPOSE 7070
 CMD ["node", "dist/main.js"]
 

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class BookingModulePhase1170000000008 implements MigrationInterface {
-  name = 'BookingModulePhase1170000000008';
+export class BookingModulePhaseOne1700000000008 implements MigrationInterface {
+  name = 'BookingModulePhaseOne1700000000008';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Recreate bookings_status_enum with UPPERCASE contract values

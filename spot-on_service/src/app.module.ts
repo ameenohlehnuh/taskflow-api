@@ -13,6 +13,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { RedisModule } from './redis/redis.module';
 import { S3Module } from './common/s3/s3.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { migrations } from './migrations';
 import { APP_FILTER } from '@nestjs/core';
 
 @Module({
@@ -35,7 +36,9 @@ import { APP_FILTER } from '@nestjs/core';
         database: configService.get<string>('DB_NAME', 'spoton'),
         autoLoadEntities: true,
         synchronize: false,
-        migrations: [__dirname + '/migrations/*{.ts,.js}'],
+        migrations,
+        migrationsRun: true,
+        logging: ['error', 'migration'],
       }),
     }),
     AuthModule,
